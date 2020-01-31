@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using FluentAssertions;
 using SeqCli.PlainText;
 using SeqCli.PlainText.Extraction;
 using SeqCli.PlainText.Patterns;
@@ -21,16 +22,16 @@ namespace SeqCli.Tests.PlainText
         public void NonGreedyMatchCanLookaheadMultipleTokens()
         {
             var (properties, remainder) = ExtractValues("[{test:**}]!", "[0]abc[1]!");
-            Assert.Null(remainder);
-            Assert.Equal("0]abc[1", properties["test"].ToString());
+            remainder.Should().BeNull();
+            properties["test"].ToString().Should().Be("0]abc[1");
         }
-        
+
         [Fact]
         public void TheMatchingPatternCanExtractDefaultSerilogFileOutput()
         {
             // This is the default format: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"
             // See: https://github.com/serilog/serilog-sinks-file#controlling-event-formatting
-            
+
             // {@l:ident} is required so that the default "token" pattern doesn't greedily eat up the `]`.
             // "timestamp" is intended to be an aggregate timestamp parser that tries ISO 8601, RFC 2822, and various other
             // popular timestamp formats.
@@ -38,24 +39,25 @@ namespace SeqCli.Tests.PlainText
             var pattern = "{@t:timestamp} [{@l:ident}] {@m:*}{:n}{@x:*}";
 
             var candidate =
-@"2018-02-21 13:29:00.123 +10:00 [ERR] The operation failed
+                @"2018-02-21 13:29:00.123 +10:00 [ERR] The operation failed
 System.DivideByZeroException: Attempt to divide by zero
   at SomeClass.SomeMethod()
 ";
 
             var (properties, remainder) = ExtractValues(pattern, candidate);
-            
-            Assert.Equal(
-                DateTimeOffset.ParseExact("2018-02-21 13:29:00.123 +10:00", "yyyy-MM-dd HH:mm:ss.fff zzz", CultureInfo.InvariantCulture),
-                properties["@t"]);
-            Assert.Equal("ERR", properties["@l"].ToString());
-            Assert.Equal("The operation failed", properties["@m"].ToString());
-            Assert.Equal(@"System.DivideByZeroException: Attempt to divide by zero
+
+
+            properties["@t"].As<DateTimeOffset>().Should().Be(
+                DateTimeOffset.ParseExact("2018-02-21 13:29:00.123 +10:00", "yyyy-MM-dd HH:mm:ss.fff zzz",
+                    CultureInfo.InvariantCulture));
+            properties["@l"].ToString().Should().Be("ERR");
+            properties["@m"].ToString().Should().Be("The operation failed");
+            properties["@x"].ToString().Should().Be(@"System.DivideByZeroException: Attempt to divide by zero
   at SomeClass.SomeMethod()
-", properties["@x"].ToString());
-            Assert.Null(remainder);
+");
+            remainder.Should().BeNull();
         }
-        
+
         [Fact(Skip = "Work in progress")]
         public void TheMatchingPatternCanExtractDefaultSerilogConsoleOutput()
         {
@@ -64,19 +66,19 @@ System.DivideByZeroException: Attempt to divide by zero
 
             // "localtime" will add the closest non-future date to the time component that is matched
             // by the pattern
-            
+
             // The pattern language needs to be extended here so that the brackets, timestamp, spacing and
             // level are all used as the start-frame marker. The strawman syntax proposes that to the
             // right of `:` will always be either an alphanumeric matcher name, or a subexpression. This
             // does have the issue that `{?:foo}` would be ambiguous (optional 'foo' matcher or optional 'foo'
             // literal, so some escaping would be necessary - e.g. `{?:\foo}` to indicate a literal 'foo' and
             // `{?:\*}` for an optional literal asterisk, `{?:\\}` for an optional literal backslash.
-            
+
 #pragma warning disable 219
             var pattern = "{:[{@t:localtime} {@l:ident}] }{@m:*}{:n}{@x:*}";
 #pragma warning restore 219
         }
-        
+
         [Fact(Skip = "Work in progress")]
         public void OptionalSourceContextCanBeExtracted()
         {
